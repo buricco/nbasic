@@ -397,6 +397,7 @@ int crunch (char *p)
    *(r++)=0x80;
   }
   if ((l++)==255) return BE_LS;
+  if (!mode) *q=toupper(*q);
   *(r++)=*(q++);
  }
  
