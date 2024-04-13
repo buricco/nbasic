@@ -41,6 +41,32 @@
  * Programs should be stored in memory in a crunched form.
  */
 
+static char *copyright=
+ "@(#) (C) Copyright 2024 S. V. Nickolas\n";
+
+/* Necessary when building with some MS-DOS compilers. */
+#ifdef __MSDOS__
+#define EXTGETLINE
+#define MOVERAISE
+#endif
+
+/*
+ * If compiling somewhere where getline(3) is unavailable, take it from
+ * NetBSD (/usr/src/tools/compat/getline.c) and #define EXTGETLINE.
+ * For example, this is needed when building for DOS with Watcom C.
+ * (This does not work on 16-bit DOS.  You don't want this on 16-bit DOS.)
+ */
+#ifdef EXTGETLINE
+extern ssize_t getline(char **, size_t *, FILE *);
+#endif
+
+/*
+ * If you get a link error about raise (e.g., DJGPP), #define MOVERAISE.
+ */
+#ifdef MOVERAISE
+#define raise i_raise
+#endif
+
 /*
  * The RAM available for BASIC program space.
  * ramlen will contain the length of the buffer.
@@ -84,6 +110,14 @@ int trace;
 int die;
 uint32_t lp, np;
 
+/*
+ * While not currently used, this should be set by a SIGINT handler.
+ * Periodically, this value should be checked, and if found, do a STOP.
+ */
+int brkraised;
+uint32_t brklin;
+uint8_t *brkptr;
+
 struct cmdtok {
  uint8_t *content;
  int (*function)(void);
@@ -101,6 +135,7 @@ enum B_ERROR {
  BE_ND,
  BE_WP,
  BE_DF,
+ BE_CN,
  BE_UP /* Last Error + 1 */
 } b_err;
 
@@ -116,6 +151,7 @@ char *ermsg[]={
  "No such file system",
  "Read-only file system",
  "Disk full",
+ "Cannot continue",
  NULL
 };
 
@@ -123,6 +159,7 @@ char *ermsg[]={
 int       b_exec   (uint32_t line);
 uint32_t  findptr  (uint32_t line);
 void      list     (uint32_t start, uint32_t end);
+void      raise    (enum B_ERROR e);
 
 int b_end (void)
 {
@@ -145,6 +182,35 @@ int b_new (void)
 {
  memset(RAM, 0, ramlen);
  return 0;
+}
+
+/* This needs work */
+int b_cont (void)
+{
+ if (!brkptr) return BE_CN;
+ myptr=brkptr;
+ curlin=brklin;
+ brklin=0;
+ brkptr=NULL;
+ return 0;
+}
+
+int b_stop (void)
+{
+ if (curlin==0xFFFFFFFF)
+ {
+  brklin=0;
+  brkptr=NULL;
+ }
+ else
+ {
+  brklin=curlin;
+  brkptr=myptr;
+ }
+ 
+ raise(BE_BK);
+ curlin=0xFFFFFFFF;
+ return BE_BK;
 }
 
 int b_run (void)
@@ -180,7 +246,8 @@ int b_goto (void)
  if (ll=0xFFFFFFFF) return BE_UL;
  curlin=l;
  lp=ll;
- myptr=pointer_to_nothing;
+ myptr=&(RAM[ll])+8;
+ return 0;
 }
 
 int b_list (void)
@@ -258,13 +325,13 @@ struct cmdtok cmdtok[]={
  {"GOSUB",   b_nop},
  {"RETURN",  b_nop},
  {"REM",     b_nop},
- {"STOP",    b_nop},
+ {"STOP",    b_stop},
  {"ON",      b_nop},
  {"LOAD",    b_nop},
  {"SAVE",    b_nop},
  {"DEF",     b_nop},
  {"PRINT",   b_nop},
- {"CONT",    b_nop},
+ {"CONT",    b_cont},
  {"LIST",    b_list},
  {"CLEAR",   b_clear},
  {"NEW",     b_new},
@@ -875,7 +942,9 @@ int main (int argc, char **argv)
  for (maxtok=0; cmdtok[maxtok].content; maxtok++);
  
  cmd=0;
- die=trace=0;
+ brkraised=die=trace=0;
+ brkptr=NULL;
+ brklin=0;
  while (!die)
  {
   int e;
