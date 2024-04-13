@@ -87,6 +87,8 @@ int trace;
 
 int die;
 
+uint32_t lp, np;
+
 struct cmdtok {
  uint8_t *content;
  int (*function)(void);
@@ -155,6 +157,23 @@ int b_run (void)
  
  b_clear();
  return b_exec(l);
+}
+
+int b_goto (void)
+{
+ uint32_t findptr (uint32_t line);
+
+ char *p;
+ uint32_t l, ll;
+ 
+ errno=0;
+ l=strtoul(myptr, &p, 10);
+ if (errno||((*p)&&(*p!=':'))) return BE_SN;
+ ll=findptr(l);
+ if (ll=0xFFFFFFFF) return BE_UL;
+ curlin=l;
+ lp=ll;
+ myptr=pointer_to_nothing;
 }
 
 int b_list (void)
@@ -228,7 +247,7 @@ struct cmdtok cmdtok[]={
  {"DIM",     b_nop},
  {"READ",    b_nop},
  {"LET",     b_nop},
- {"GOTO",    b_nop},
+ {"GOTO",    b_goto},
  {"RUN",     b_run},
  {"IF",      b_nop},
  {"RESTORE", b_nop},
@@ -637,7 +656,6 @@ int b_do (char *ptr)
 int b_exec (uint32_t line)
 {
  int e;
- uint32_t lp, np;
  
  if (!line)
  {
@@ -652,7 +670,7 @@ int b_exec (uint32_t line)
  while (0!=(np=dwunpak(&(RAM[lp]))))
  {
   curlin=dwunpak(&(RAM[lp+4]));
-  e=b_do(&(RAM[8]));
+  e=b_do(&(RAM[lp+8]));
   if (e) return e;
   lp=np;
  }
