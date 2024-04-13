@@ -74,19 +74,14 @@ uint16_t stkptr;
 uint32_t curlin;
 
 uint8_t *cmdptr;
-
 uint8_t cmdlin[256];
-
 uint32_t prgtop;
-
 uint8_t *myptr;
 
 uint8_t *pointer_to_nothing = "";
 
 int trace;
-
 int die;
-
 uint32_t lp, np;
 
 struct cmdtok {
@@ -100,6 +95,12 @@ enum B_ERROR {
  BE_UL,
  BE_OM,
  BE_LS,
+ BE_NE,
+ BE_AD,
+ BE_IO,
+ BE_ND,
+ BE_WP,
+ BE_DF,
  BE_UP /* Last Error + 1 */
 } b_err;
 
@@ -109,8 +110,19 @@ char *ermsg[]={
  "Undefined line number",
  "Out of memory",
  "String too long",
+ "File not found",
+ "Access denied",
+ "I/O error",
+ "No such file system",
+ "Read-only file system",
+ "Disk full",
  NULL
 };
+
+/* Forward declarations */
+int       b_exec   (uint32_t line);
+uint32_t  findptr  (uint32_t line);
+void      list     (uint32_t start, uint32_t end);
 
 int b_end (void)
 {
@@ -137,9 +149,6 @@ int b_new (void)
 
 int b_run (void)
 {
- /* Forward declaration */
- int b_exec (uint32_t line);
- 
  char *p;
  uint32_t l;
  
@@ -161,8 +170,6 @@ int b_run (void)
 
 int b_goto (void)
 {
- uint32_t findptr (uint32_t line);
-
  char *p;
  uint32_t l, ll;
  
@@ -178,9 +185,6 @@ int b_goto (void)
 
 int b_list (void)
 {
- /* Forward declaration */
- void list (uint32_t start, uint32_t end);
- 
  uint32_t s, e;
  char *t;
  
@@ -495,7 +499,11 @@ void fixlinks (void)
  while (p<ramlen)
  {
   n=dwunpak(&(RAM[p]));
-  if (!n) return;
+  if (!n)
+  {
+   prgtop=p+9;
+   return;
+  }
   
   n=p+8;
   while (RAM[n++]) ;
@@ -679,11 +687,178 @@ int b_exec (uint32_t line)
  return 0;
 }
 
+void basver (void)
+{
+ printf ("This version of NBASIC built " __DATE__ " " __TIME__ "\n");
+}
+
+/*
+ * Load and save programs.
+ *   ALERT: Programs are stored in TOKENIZED FORMAT.
+ *          Changing the tokens will break compatibility with earlier versions
+ *          (this is acceptable for now, we haven't set the token table in
+ *           stone yet; but by version 1.0 we need to do that).
+ */
+
+int i_load (char *filename)
+{
+ FILE *file;
+ uint32_t e, l;
+
+ /*
+  * Open the file.
+  * If this returns "No such file or directory", raise NE (file not found).
+  * Otherwise raise AD (access denied).
+  */ 
+ file=fopen(filename, "rb");
+ if (!file)
+ {
+  switch (errno)
+  {
+   case EIO:
+    return BE_IO;
+   case ENODEV:
+    return BE_ND;
+   case ENOENT:
+    return BE_NE;
+   default:
+    return BE_AD;
+  }
+ }
+ 
+ /* Check whether there is enough room for the program. */
+ fseek(file, 0, SEEK_END);
+ l=ftell(file);
+ fseek(file, 0, SEEK_SET);
+ if (l>=ramlen)
+ {
+  fclose(file);
+  return BE_OM;
+ }
+ 
+ /* Clear the memory space, then load the program into it. */
+ b_new();
+ e=fread(RAM, 1, l, file);
+ fclose(file);
+ if (e<l) return BE_IO; /* Raise I/O error for short read */
+  
+ /* Correct line pointers. */
+ fixlinks();
+ return 0;
+}
+
+int i_save (char *filename)
+{
+ FILE *file;
+ uint32_t e;
+ 
+ /*
+  * Open the file;
+  * if it failed, try to figure out why and raise a relevant error code.
+  */
+ file=fopen(filename, "wb");
+ if (!file)
+ {
+  switch (errno)
+  {
+   case EIO:
+    return BE_IO;
+   case ENODEV:
+    return BE_ND;
+   case ENOENT:
+    return BE_NE;
+   case EROFS:
+    return BE_WP;
+   default:
+    return BE_AD;
+  }
+ }
+ 
+ /*
+  * Write the file.
+  * If it worked, return success.
+  * If not, see whether it was "disk full" and raise it.
+  * If not "disk full", raise "I/O error".
+  */
+ e=fwrite(RAM, 1, prgtop, file);
+ fclose(file);
+ if (e<(prgtop))
+ {
+  if (errno==ENOSPC) return BE_DF;
+  return BE_IO;
+ }
+ return 0;
+}
+
+/*
+ * Metacommands are commands which affect the internal operation of the
+ * interpreter, but cannot be executed in a program.  They must be entered at
+ * the command line.  These commands begin with a star (*) and may take
+ * parameters (which must be literals).
+ * 
+ * The following metacommands are currently implemented:
+ *   *BYE - Hard exit, optionally leaving a return code.  (SYSTEM cannot
+ *          currently leave return codes.)
+ *   *FREE - Display memory usage statistics.  (Some of this will eventually
+ *           make its way into the FRE() function.)
+ *   *LOAD - Load a program file into memory (see i_load() above).
+ *   *SAVE - Save a program file to disk (see i_save() above).
+ *   *VER - Display the version/build information for NBASIC (same as at
+ *          initial signon).
+ * 
+ * Some functions initially implemented through metacommands will eventually
+ * be migrated to actual commands, but as they require the use of strings,
+ * support for variables, and in particular garbage-collected Pascal strings,
+ * will need to be implemented for them to work.
+ * 
+ * When invoked, args will point to a valid string; may be empty.  cmd will be
+ * upcased and the star will be removed.  metacmd should return 0 for success,
+ * and a failure will raise the code supplied (usually this should be BE_SN).
+ */
+int metacmd (char *cmd, char *args)
+{
+ if (!strcmp(cmd, "BYE")) /* NO RETURN */
+ {
+  int e;
+  
+  if (*args)
+   exit(atoi(args));
+  else
+   exit(0);
+ }
+ if (!strcmp(cmd, "FREE")) /* XXX: add variable space when implemented */
+ {
+  if (*args) return BE_SN;
+  
+  printf ("Memory used:  %10lu bytes\n"
+          "Memory free:  %10lu bytes\n", prgtop, ramlen-prgtop);
+  return 0;
+ }
+ if (!strcmp(cmd, "LOAD"))
+ {
+  if (!*args) return BE_SN;
+  return i_load(args);
+ }
+ if (!strcmp(cmd, "SAVE"))
+ {
+  if (!*args) return BE_SN;
+  return i_save(args);
+ }
+ if (!strcmp(cmd, "VER"))
+ {
+  if (*args) return BE_SN;
+  basver();
+  return 0;
+ }
+ return BE_SN;
+}
+
 int main (int argc, char **argv)
 {
  char *cmd;
  
- printf ("This version of NBASIC built " __DATE__ " " __TIME__ "\n\n");
+ basver();
+ putchar('\n');
  
  /* If we can't get enough memory, display an error and die. */
  if (!mkram())
@@ -714,6 +889,21 @@ another:
   e=getline(&cmd, &l, stdin);
   if (e<0) break;
   if (cmd[strlen(cmd)-1]=='\n') cmd[strlen(cmd)-1]=0;
+  if (*cmd=='*')
+  {
+   char *p;
+   
+   for (p=cmd+1; (*p)&&(*p!=' '); p++) *p=toupper(*p);
+   p=strchr(cmd, ' ');
+   if (p)
+    *(p++)=0;
+   else
+    p=pointer_to_nothing;
+   e=metacmd(cmd+1, p);
+   if (e)
+    raise(e);
+   continue;
+  }
   cmdptr=cmd;
   while (isspace(*cmdptr)) cmdptr++;
   if (!*cmdptr) goto another;
