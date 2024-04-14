@@ -22,16 +22,19 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-all:	nbasic
+CFLAGS := $(CFLAGS) `sdl2-config --cflags`
+LIBS   := $(LIBS) `sdl2-config --libs`
 
-nbasic:	nbasic.o ttystdio.o
-	$(CC) -o nbasic nbasic.o ttystdio.o $(LIBS)
+all:	nbasic-sdl
+
+nbasic-sdl:	nbasic.o ttysdl.o
+	$(CC) -o nbasic-sdl nbasic.o ttysdl.o $(LIBS)
 
 nbasic.o:	nbasic.c tty.h
-	$(CC) $(CFLAGS) -c -o nbasic.o nbasic.c
+	$(CC) $(CFLAGS) -DCUSTOM_GETLINE -c -o nbasic.o nbasic.c
 
-ttystdio.o:	ttystdio.c tty.h
-	$(CC) $(CFLAGS) -c -o ttystdio.o ttystdio.c
+ttysdl.o:	ttysdl.c tty.h
+	$(CC) $(CFLAGS) -c -o ttysdl.o ttysdl.c
 
 clean:
-	rm -f nbasic nbasic.o ttystdio.o
+	rm -f nbasic-sdl nbasic.o ttysdl.o
