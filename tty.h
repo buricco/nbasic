@@ -33,4 +33,8 @@ int i_getch (void);
 int i_putch (int);
 void i_deinitty (void);
 int i_initty (void);
+int i_ckbrk (void);
+
+extern char *i_ttydrv;
+extern int brkraised;
 #endif /* NBASIC_INCL_H_TTY */

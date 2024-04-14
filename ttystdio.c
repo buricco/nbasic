@@ -28,6 +28,8 @@
 #include <stdio.h>
 #include "tty.h"
 
+char *i_ttydrv="STDIO";
+
 int i_getch (void)
 {
  return getchar();
@@ -43,6 +45,11 @@ void i_deinitty (void)
 }
 
 int i_initty (void)
+{
+ return 0;
+}
+
+int i_ckbrk (void)
 {
  return 0;
 }

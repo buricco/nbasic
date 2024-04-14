@@ -45,6 +45,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define BASVER "0.0"
+
 /*
  * This is intended to be a vaguely Microsoft-like dialect of BASIC.
  * That said, there is no need for bug-compatibility with any particular
@@ -900,7 +902,9 @@ int b_exec (uint32_t line)
 
 void basver (void)
 {
- i_puts ("This version of NBASIC built " __DATE__ " " __TIME__ "\n");
+ i_puts ("NBASIC Version " BASVER "\n"
+         "Copyright 2024 S. V. Nickolas\n"
+         "This version of NBASIC built " __DATE__ " " __TIME__ "\n");
 }
 
 /*
@@ -1064,6 +1068,9 @@ int metacmd (char *cmd, char *args)
  {
   if (*args) return BE_SN;
   basver();
+  i_puts ("TTY driver: ");
+  i_puts (i_ttydrv);
+  i_putch('\n');
   return 0;
  }
  return BE_SN;
@@ -1104,12 +1111,33 @@ int main (int argc, char **argv)
  brkraised=die=trace=0;
  brkptr=NULL;
  brklin=0;
+ myptr=NULL;
+ curlin=0xFFFFFFFF;
  while (!die)
  {
   int e;
   size_t l;
   
-  curlin=0xFFFFFFFF;
+  /*
+   * Some of b_exec() is going to need to be moved in here.
+   * Otherwise, stuff like GOTO might not always work right.
+   */
+  
+  if (curlin!=0xFFFFFFFF)
+  {
+   if (!myptr)
+   {
+    curlin=0xFFFFFFFF;
+   }
+   else
+   {
+    if (!*myptr)
+    {
+     curlin=0xFFFFFFFF;
+    }
+   }
+  }
+  
   i_puts ("Ready\n");
 
   /* Don't show the "Ready" prompt if there's no input to begin with */

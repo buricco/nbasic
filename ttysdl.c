@@ -30,6 +30,10 @@
 #include <SDL.h>
 #include "tty.h"
 
+char *i_ttydrv="SDL2";
+
+static int susbrk;
+
 static unsigned char font[]={
  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -506,11 +510,24 @@ static int tty_init (const char *title, uint32_t f, uint32_t b)
  return 0;
 }
 
+int i_ckbrk (void)
+{
+ if (keyring[keybufr++]==3)
+ {
+  tty_getch();
+  brkraised=1;
+ }
+ return brkraised;
+}
+
 int i_getch (void)
 {
+ int e;
+ susbrk=1;
  if (!tty_alive) return -1;
  
- return tty_getch();
+ e=tty_getch();
+ susbrk=0;
 }
 
 int i_putch (int c)
@@ -572,6 +589,8 @@ void i_deinitty (void)
 int i_initty (void)
 {
  int e;
+ 
+ susbrk=0;
  
  e=tty_init("NBASIC",0,0);
  if (e) return e;
