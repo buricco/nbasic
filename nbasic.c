@@ -25,6 +25,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * By default, this program uses "ttystdio.c", which provides a reasonable
+ * I/O library for any system where the <stdio.h> I/O routines work.  But on
+ * some GUI operating systems, this may not be reasonable.  In this case, it
+ * is possible to write a custom console library.  A primitive example of this
+ * is included in "ttysdl.c"; to use this you will need to link in SDL the
+ * usual way and #define CUSTOM_GETLINE to use our line input routine instead
+ * of the system routine.
+ * 
+ * This may be desirable for other reasons, e.g., to provide UTF-8 support on
+ * older systems.
+ */
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
@@ -183,6 +196,58 @@ void i_putu (uint32_t x, int align)
  sprintf(t, align?"%10lu":"%lu", x);
  i_puts(t);
 }
+
+#ifdef CUSTOM_GETLINE
+int i_getln (char *prompt)
+{
+ uint8_t l;
+ 
+top:
+ memset(cmd, 0, 256);
+ l=0;
+ i_puts(prompt);
+ while (1)
+ {
+  int c;
+  
+  c=i_getch();
+  if (c<0) return -1;
+  if ((c==8)||(c==127)) /* ^H / Del */
+  {
+   if (!l)
+   {
+    i_putch(7);
+    continue;
+   }
+   i_putch(8);
+   i_putch(' ');
+   i_putch(8);
+   l--;
+   continue;
+  }
+  if ((c==10)||(c==13))
+  {
+   cmd[l]=10;
+   i_putch('\n');
+   return l;
+  }
+  if (c==24) /* ^X */
+  {
+   i_puts("@\n");
+   l=0;
+   break;
+  }
+  if (l==254)
+  {
+   i_putch(7);
+   continue;
+  }
+  i_putch(c);
+  cmd[l++]=c;
+ }
+ goto top;
+}
+#endif
 
 uint8_t thischr (void)
 {
@@ -1033,7 +1098,9 @@ int main (int argc, char **argv)
 
  for (maxtok=0; cmdtok[maxtok].content; maxtok++);
  
+#ifndef CUSTOM_GETLINE
  cmd=0;
+#endif
  brkraised=die=trace=0;
  brkptr=NULL;
  brklin=0;
@@ -1047,10 +1114,10 @@ int main (int argc, char **argv)
 
   /* Don't show the "Ready" prompt if there's no input to begin with */
 another:  
-  i_putch('>');
 #ifdef CUSTOM_GETLINE
-  e=i_getln();
+  e=i_getln(">");
 #else
+  i_putch('>');
   e=getline(&cmd, &l, stdin);
 #endif
   if (e<0) break;

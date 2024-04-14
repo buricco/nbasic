@@ -25,12 +25,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*
- * This code is not finished.
- * In particular, the TTY output code has not yet been written.
- */
-
 #include <stdint.h>
+#include <string.h>
 #include <SDL.h>
 #include "tty.h"
 
@@ -352,7 +348,7 @@ static void refresh (void)
  uint8_t x, y;
  uint16_t yoff;
  
- for (y=0; y<24; y++)
+ for (y=0; y<25; y++)
  {
   yoff=y*80;
   for (x=0; x<80; x++)
@@ -492,14 +488,14 @@ static int tty_init (const char *title, uint32_t f, uint32_t b)
  if (!tick) return -1;
  
  screen=SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED,
-                         SDL_WINDOWPOS_UNDEFINED, 640, 350, 0);
+                         SDL_WINDOWPOS_UNDEFINED, 640, 400, 0);
  if (!screen) return -1;
  
  renderer=SDL_CreateRenderer(screen, -1, 0);
  if (!renderer) return -1;
  
  texture=SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                           SDL_TEXTUREACCESS_STREAMING, 640, 350);
+                           SDL_TEXTUREACCESS_STREAMING, 640, 400);
  if (!texture) return -1;
  
  tty_alive=1;
@@ -512,12 +508,60 @@ static int tty_init (const char *title, uint32_t f, uint32_t b)
 
 int i_getch (void)
 {
+ if (!tty_alive) return -1;
+ 
  return tty_getch();
 }
 
 int i_putch (int c)
 {
+ uint16_t t;
  
+ if (!tty_alive) return -1;
+ 
+ if ((c&0x7F)<0x20)
+ {
+  switch (c&0x7F)
+  {
+   case 0x07:
+    /* XXX: bell */
+    return 7;
+   case 0x08:
+    if (csrx)
+    {
+     csrx--;
+    }
+    else if (csry)
+    {
+     csrx=80;
+     csry--;
+    }
+    return 8;
+   case 0x09:
+    while (csrx&7) i_putch(0x20|(c&0x80));
+    return 9;
+   case 0x0A:
+    csrx=0;
+    if (csry<24)
+    {
+     csry++;
+     return 10;
+    }
+    csry=24;
+    memmove(vram, vram+80, 1920);
+    memset(vram+1920, ' ', 80);
+    return 10;
+   case 0x0D:
+    csrx=0;
+    return 13;
+  }
+ }
+ 
+ vram[csrx+(csry*80)]=c;
+ csrx++;
+ if (csrx==80)
+  i_putch(0x10);
+ return c;
 }
 
 void i_deinitty (void)
@@ -527,5 +571,9 @@ void i_deinitty (void)
 
 int i_initty (void)
 {
- return tty_init("NBASIC",0,0);
+ int e;
+ 
+ e=tty_init("NBASIC",0,0);
+ if (e) return e;
+ return 0;
 }
