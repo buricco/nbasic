@@ -22,11 +22,14 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-nbasic:	nbasic.o
-	$(CC) $(LINS) -o nbasic nbasic.o
+nbasic:	nbasic.o ttystdio.o
+	$(CC) $(LINS) -o nbasic nbasic.o ttystdio.o
 
-nbasic.o:	nbasic.c
+nbasic.o:	nbasic.c tty.h
 	$(CC) $(CFLAGS) -c -o nbasic.o nbasic.c
 
+ttystdio.o:	ttystdio.c tty.h
+	$(CC) $(CFLAGS) -c -o ttystdio.o ttystdio.c
+
 clean:
-	rm -f nbasic nbasic.o
+	rm -f nbasic nbasic.o ttystdio.o

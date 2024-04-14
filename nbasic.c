@@ -44,6 +44,8 @@
 static char *copyright=
  "@(#) (C) Copyright 2024 S. V. Nickolas\n";
 
+#include "tty.h"
+
 /* Necessary when building with some MS-DOS compilers. */
 #ifdef __MSDOS__
 #define EXTGETLINE
@@ -160,6 +162,35 @@ int       b_exec   (uint32_t line);
 uint32_t  findptr  (uint32_t line);
 void      list     (uint32_t start, uint32_t end);
 void      raise    (enum B_ERROR e);
+
+/* Helper functions for printing various types. */
+
+void i_puts (char *s)
+{
+ char *p;
+ 
+ for (p=s; *p; p++) i_putch(*p);
+}
+
+void i_putu (uint32_t x, int align)
+{
+ uint8_t t[11];
+ 
+ sprintf(t, align?"%10lu":"%lu", x);
+ i_puts(t);
+}
+
+uint8_t thischr (void)
+{
+ if (*myptr==':') return 0;
+ return *myptr;
+}
+
+uint8_t nextchr (void)
+{
+ myptr++;
+ return thischr();
+}
 
 int b_end (void)
 {
@@ -309,6 +340,38 @@ int b_system (void)
 
 int maxtok;
 
+enum bastok {
+ TK_END = 0x81,
+ TK_FOR,
+ TK_NEXT,
+ TK_DATA,
+ TK_INPUT,
+ TK_DIM,
+ TK_READ,
+ TK_LET,
+ TK_GOTO,
+ TK_RUN,
+ TK_IF,
+ TK_RESTORE,
+ TK_GOSUB,
+ TK_RETURN,
+ TK_REM,
+ TK_STOP,
+ TK_ON,
+ TK_LOAD,
+ TK_SAVE,
+ TK_DEF,
+ TK_PRINT,
+ TK_CONT,
+ TK_LIST,
+ TK_CLEAR,
+ TK_NEW,
+ TK_TRON,
+ TK_TROFF,
+ TK_SYSTEM,
+ TK_LASTTOKEN
+};
+
 struct cmdtok cmdtok[]={
  {"END",     b_end},
  {"FOR",     b_nop},
@@ -345,12 +408,15 @@ void raise (enum B_ERROR e)
 {
  b_err=e;
  if (e>BE_UP)
-  printf ("Unprintable error");
+  i_puts ("Unprintable error");
  else
-  printf ("%s", ermsg[b_err]);
+  i_puts (ermsg[b_err]);
  if (curlin!=0xFFFFFFFF)
-  printf (" at line %lu", curlin);
- printf ("\n");
+ {
+  i_puts (" at line ");
+  i_putu (curlin, 0);
+ }
+ i_putch('\n');
  curlin=0xFFFFFFFF;
 }
 
@@ -483,7 +549,7 @@ void uncrunch (unsigned char *p)
   if (*q==0x80)
   {
    q++;
-   printf ("%c", *(q++));
+   i_putch (*(q++));
   }
   else if (*q>0x80)
   {
@@ -491,14 +557,18 @@ void uncrunch (unsigned char *p)
    
    t=*(q++);
    if ((t-0x81)>=maxtok)
-    putchar (t);
+    i_putch (t);
    else
-    printf (" %s ", cmdtok[t-0x81].content);
+   {
+    i_putch(' ');
+    i_puts(cmdtok[t-0x81].content);
+    i_putch(' ');
+   }
   }
   else
-   putchar(*(q++));
+   i_putch(*(q++));
  }
- putchar('\n');
+ i_putch('\n');
 }
 
 /*
@@ -546,7 +616,9 @@ void list (uint32_t start, uint32_t end)
   l=dwunpak(&(RAM[p+4]));
   if ((l>=start)&&(l<=end))
   {
-   printf (" %10lu ", l);
+   i_putch(' ');
+   i_putu(l, 1);
+   i_putch(' ');
    uncrunch(&(RAM[p+8]));
   }
   p=n;
@@ -705,9 +777,11 @@ int b_do (char *ptr)
  myptr=ptr;
  while (*myptr)
  {
-  if (trace)
+  if (trace&&(curlin!=0xFFFFFFFF))
   {
-   if (curlin!=0xFFFFFFFF) printf ("[%lu]", curlin);
+   i_putch('[');
+   i_putu(curlin, 0);
+   i_putch(']');
   }
   if ((*myptr>=0x81)&&(*myptr<(0x81+maxtok)))
   {
@@ -757,7 +831,7 @@ int b_exec (uint32_t line)
 
 void basver (void)
 {
- printf ("This version of NBASIC built " __DATE__ " " __TIME__ "\n");
+ i_puts ("This version of NBASIC built " __DATE__ " " __TIME__ "\n");
 }
 
 /*
@@ -898,8 +972,11 @@ int metacmd (char *cmd, char *args)
  {
   if (*args) return BE_SN;
   
-  printf ("Memory used:  %10lu bytes\n"
-          "Memory free:  %10lu bytes\n", prgtop, ramlen-prgtop);
+  i_puts ("Memory used:  ");
+  i_putu (prgtop, 1);
+  i_puts ("bytes\nMemory free:  ");
+  i_putu (ramlen-prgtop, 1);
+  i_puts ("bytes\n");
   return 0;
  }
  if (!strcmp(cmd, "LOAD"))
@@ -926,7 +1003,7 @@ int main (int argc, char **argv)
  char *cmd;
  
  basver();
- putchar('\n');
+ i_putch('\n');
  
  /* If we can't get enough memory, display an error and die. */
  if (!mkram())
@@ -935,7 +1012,8 @@ int main (int argc, char **argv)
   return -1;
  }
  
- printf ("%lu bytes free\n", ramlen);
+ i_putu(ramlen, 0);
+ i_puts(" bytes free\n");
  
  prgtop=0;
 
@@ -951,11 +1029,11 @@ int main (int argc, char **argv)
   size_t l;
   
   curlin=0xFFFFFFFF;
-  printf ("Ready\n");
+  i_puts ("Ready\n");
 
   /* Don't show the "Ready" prompt if there's no input to begin with */
 another:  
-  putchar('>');
+  i_putch('>');
   e=getline(&cmd, &l, stdin);
   if (e<0) break;
   if (cmd[strlen(cmd)-1]=='\n') cmd[strlen(cmd)-1]=0;
