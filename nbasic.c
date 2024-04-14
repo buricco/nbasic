@@ -112,6 +112,10 @@ int trace;
 int die;
 uint32_t lp, np;
 
+#ifdef CUSTOM_GETLINE
+uint8_t cmd[256];
+#endif
+
 /*
  * While not currently used, this should be set by a SIGINT handler.
  * Periodically, this value should be checked, and if found, do a STOP.
@@ -963,6 +967,8 @@ int metacmd (char *cmd, char *args)
  {
   int e;
   
+  i_deinitty();
+  
   if (*args)
    exit(atoi(args));
   else
@@ -1000,7 +1006,15 @@ int metacmd (char *cmd, char *args)
 
 int main (int argc, char **argv)
 {
+#ifndef CUSTOM_GETLINE
  char *cmd;
+#endif
+ 
+ if (i_initty())
+ {
+  fprintf (stderr, "Could not initialize tty\n");
+  return -1;
+ }
  
  basver();
  i_putch('\n');
@@ -1034,7 +1048,11 @@ int main (int argc, char **argv)
   /* Don't show the "Ready" prompt if there's no input to begin with */
 another:  
   i_putch('>');
+#ifdef CUSTOM_GETLINE
+  e=i_getln();
+#else
   e=getline(&cmd, &l, stdin);
+#endif
   if (e<0) break;
   if (cmd[strlen(cmd)-1]=='\n') cmd[strlen(cmd)-1]=0;
   if (*cmd=='*')
@@ -1079,6 +1097,7 @@ another:
   if (e) raise(e);
  }
  
+ i_deinitty();
  free(RAM);
  return 0;
 }
