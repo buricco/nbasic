@@ -139,6 +139,8 @@ int brkraised;
 uint32_t brklin;
 uint8_t *brkptr;
 
+int parsemode;
+
 struct cmdtok {
  uint8_t *content;
  int (*function)(void);
@@ -177,10 +179,91 @@ char *ermsg[]={
 };
 
 /* Forward declarations */
-int       b_exec   (uint32_t line);
-uint32_t  findptr  (uint32_t line);
-void      list     (uint32_t start, uint32_t end);
-void      raise    (enum B_ERROR e);
+int       b_exec    (uint32_t line);
+uint32_t  findptr   (uint32_t line);
+void      list      (uint32_t start, uint32_t end);
+void      raise     (enum B_ERROR e);
+
+int       b_clear   (void);
+int       b_cont    (void);
+int       b_data    (void);
+int       b_end     (void);
+int       b_goto    (void);
+int       b_list    (void);
+int       b_new     (void);
+int       b_nop     (void);
+int       b_rem     (void);
+int       b_run     (void);
+int       b_stop    (void);
+int       b_tron    (void);
+int       b_troff   (void);
+int       b_system  (void);
+
+int maxtok;
+
+enum bastok {
+ TK_END = 0x81,
+ TK_FOR,
+ TK_NEXT,
+ TK_DATA,
+ TK_INPUT,
+ TK_DIM,
+ TK_READ,
+ TK_LET,
+ TK_GOTO,
+ TK_RUN,
+ TK_IF,
+ TK_RESTORE,
+ TK_GOSUB,
+ TK_RETURN,
+ TK_REM,
+ TK_STOP,
+ TK_ON,
+ TK_LOAD,
+ TK_SAVE,
+ TK_DEF,
+ TK_PRINT,
+ TK_CONT,
+ TK_LIST,
+ TK_CLEAR,
+ TK_NEW,
+ TK_TRON,
+ TK_TROFF,
+ TK_SYSTEM,
+ TK_LASTTOKEN
+};
+
+struct cmdtok cmdtok[]={
+ {"END",     b_end},
+ {"FOR",     b_nop},
+ {"NEXT",    b_nop},
+ {"DATA",    b_data},
+ {"INPUT",   b_nop},
+ {"DIM",     b_nop},
+ {"READ",    b_nop},
+ {"LET",     b_nop},
+ {"GOTO",    b_goto},
+ {"RUN",     b_run},
+ {"IF",      b_nop},
+ {"RESTORE", b_nop},
+ {"GOSUB",   b_nop},
+ {"RETURN",  b_nop},
+ {"REM",     b_rem},
+ {"STOP",    b_stop},
+ {"ON",      b_nop},
+ {"LOAD",    b_nop},
+ {"SAVE",    b_nop},
+ {"DEF",     b_nop},
+ {"PRINT",   b_nop},
+ {"CONT",    b_cont},
+ {"LIST",    b_list},
+ {"CLEAR",   b_clear},
+ {"NEW",     b_new},
+ {"TRON",    b_tron},
+ {"TROFF",   b_troff},
+ {"SYSTEM",  b_system},
+ {NULL,      NULL}
+};
 
 /* Helper functions for printing various types. */
 
@@ -253,7 +336,11 @@ top:
 
 uint8_t thischr (void)
 {
- if (*myptr==':') return 0;
+ if ((*myptr==':')&&(!parsemode)) return 0;
+ if ((*myptr=='"')&&(parsemode<2)) parsemode=!parsemode;
+ if ((*myptr==':')&&(parsemode==2)) parsemode=0;
+ if ((*myptr==TK_DATA)&&(!parsemode)) parsemode=2;
+ if ((*myptr==TK_REM)&&(!parsemode)) parsemode=3;
  return *myptr;
 }
 
@@ -320,7 +407,7 @@ int b_run (void)
  char *p;
  uint32_t l;
  
- if (*myptr)
+ if (thischr())
  {
   errno=0;
   l=strtoul(myptr, &p, 10);
@@ -352,6 +439,23 @@ int b_goto (void)
  return 0;
 }
 
+int b_rem (void)
+{
+ /* Ignore the rest of the line. */
+ myptr=pointer_to_nothing;
+ return 0;
+}
+
+int b_data (void)
+{
+ /* Ignore the statement. */
+ while (1)
+ {
+  if (thischr()) nextchr();
+ }
+ return 0;
+}
+
 int b_list (void)
 {
  uint32_t s, e;
@@ -359,23 +463,23 @@ int b_list (void)
  
  s=e=0;
  
- if (*myptr)
+ if (thischr())
  {
-  if ((!isdigit(*myptr))&&(*myptr!=',')) return BE_SN;
-  if (*myptr!=',')
+  if ((!isdigit(thischr()))&&(thischr()!=',')) return BE_SN;
+  if (thischr()!=',')
   {
    errno=0;
    s=strtoul(myptr, &t, 10);
    if (errno) return BE_SN;
    myptr=t;
-   if (!*myptr)
+   if (!thischr())
    {
     list (s, s);
     return 0;
    }
-   if (*myptr!=',') return BE_SN;
-   myptr++;
-   if (*myptr)
+   if (thischr()!=',') return BE_SN;
+   nextchr();
+   if (thischr())
    {
     e=strtoul(myptr, &t, 10);
     if (errno) return BE_SN;
@@ -408,72 +512,6 @@ int b_system (void)
  die=1;
  return 0;
 }
-
-int maxtok;
-
-enum bastok {
- TK_END = 0x81,
- TK_FOR,
- TK_NEXT,
- TK_DATA,
- TK_INPUT,
- TK_DIM,
- TK_READ,
- TK_LET,
- TK_GOTO,
- TK_RUN,
- TK_IF,
- TK_RESTORE,
- TK_GOSUB,
- TK_RETURN,
- TK_REM,
- TK_STOP,
- TK_ON,
- TK_LOAD,
- TK_SAVE,
- TK_DEF,
- TK_PRINT,
- TK_CONT,
- TK_LIST,
- TK_CLEAR,
- TK_NEW,
- TK_TRON,
- TK_TROFF,
- TK_SYSTEM,
- TK_LASTTOKEN
-};
-
-struct cmdtok cmdtok[]={
- {"END",     b_end},
- {"FOR",     b_nop},
- {"NEXT",    b_nop},
- {"DATA",    b_nop},
- {"INPUT",   b_nop},
- {"DIM",     b_nop},
- {"READ",    b_nop},
- {"LET",     b_nop},
- {"GOTO",    b_goto},
- {"RUN",     b_run},
- {"IF",      b_nop},
- {"RESTORE", b_nop},
- {"GOSUB",   b_nop},
- {"RETURN",  b_nop},
- {"REM",     b_nop},
- {"STOP",    b_stop},
- {"ON",      b_nop},
- {"LOAD",    b_nop},
- {"SAVE",    b_nop},
- {"DEF",     b_nop},
- {"PRINT",   b_nop},
- {"CONT",    b_cont},
- {"LIST",    b_list},
- {"CLEAR",   b_clear},
- {"NEW",     b_new},
- {"TRON",    b_tron},
- {"TROFF",   b_troff},
- {"SYSTEM",  b_system},
- {NULL,      NULL}
-};
 
 void raise (enum B_ERROR e)
 {
@@ -848,20 +886,25 @@ int b_do (char *ptr)
  myptr=ptr;
  while (*myptr)
  {
+  parsemode=0;
   if (trace&&(curlin!=0xFFFFFFFF))
   {
    i_putch('[');
    i_putu(curlin, 0);
    i_putch(']');
   }
-  if ((*myptr>=0x81)&&(*myptr<(0x81+maxtok)))
+  if (!thischr())
   {
-   f=(*myptr)-0x81;
-   myptr++;
+   nextchr();
+   continue;
+  }
+  if ((thischr()>=0x81)&&(thischr()<(0x81+maxtok)))
+  {
+   f=(thischr())-0x81;
+   nextchr();
    e=(cmdtok[f].function)();
    if (e) return e;
-   if (!(*myptr)) return 0;
-   if (*myptr!=':') return BE_SN;
+   if (!(thischr())) return 0;
    continue;
   }
   return BE_SN;
