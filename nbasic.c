@@ -199,6 +199,12 @@ int       b_tron    (void);
 int       b_troff   (void);
 int       b_system  (void);
 
+enum vartyp {
+ V_INT,   /* equivalent to int32_t */
+ V_FLOAT, /* equivalent to double */
+ V_STRING
+};
+
 int maxtok;
 
 enum bastok {
@@ -313,6 +319,7 @@ top:
   if ((c==10)||(c==13))
   {
    cmd[l]=10;
+   cmd[l+1]=0;
    i_putch('\n');
    return l;
   }
@@ -336,12 +343,48 @@ top:
 
 uint8_t thischr (void)
 {
+ if (!myptr) return 0;
+
  if ((*myptr==':')&&(!parsemode)) return 0;
  if ((*myptr=='"')&&(parsemode<2)) parsemode=!parsemode;
  if ((*myptr==':')&&(parsemode==2)) parsemode=0;
  if ((*myptr==TK_DATA)&&(!parsemode)) parsemode=2;
  if ((*myptr==TK_REM)&&(!parsemode)) parsemode=3;
  return *myptr;
+}
+
+/* Skip to end of command line */
+void advtoend (void)
+{
+ if (myptr) return;
+ while (*myptr) myptr++;
+}
+
+/* Skip to next command or end of command line */
+void advtocmd (void)
+{
+ if (myptr) return;
+ while (*myptr)
+ {
+  if (*myptr==':')
+  {
+   myptr++;
+   return;
+  }
+  myptr++;
+ }
+}
+
+int isend (void)
+{
+ if (!myptr) return 1;
+ if (*myptr==':')
+ {
+  myptr++;
+  return 1;
+ }
+ if (!*myptr) return 1;
+ return 0;
 }
 
 uint8_t nextchr (void)
@@ -442,17 +485,14 @@ int b_goto (void)
 int b_rem (void)
 {
  /* Ignore the rest of the line. */
- myptr=pointer_to_nothing;
+ advtoend();
  return 0;
 }
 
 int b_data (void)
 {
  /* Ignore the statement. */
- while (1)
- {
-  if (thischr()) nextchr();
- }
+ advtocmd();
  return 0;
 }
 
